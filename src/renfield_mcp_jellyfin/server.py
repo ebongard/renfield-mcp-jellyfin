@@ -136,7 +136,7 @@ async def search_media(
 
     limit = max(1, min(limit, 50))
     data = await _jellyfin_get(
-        "/Items",
+        f"/Users/{JELLYFIN_USER_ID}/Items",
         searchTerm=query,
         IncludeItemTypes=type,
         Recursive="true",
