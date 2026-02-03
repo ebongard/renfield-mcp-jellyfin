@@ -134,6 +134,8 @@ class TestSearchMedia:
             assert len(result["items"]) == 2
             assert result["items"][0]["name"] == "Song A"
             assert result["items"][0]["artist"] == "Artist X"
+            assert "api_stream" in result["items"][0]
+            assert "1" in result["items"][0]["api_stream"]
             mock.assert_called_once()
 
     async def test_album_search(self):
@@ -226,6 +228,8 @@ class TestGetAlbumTracks:
             assert result["total"] == 3
             assert result["items"][0]["index"] == 1
             assert result["items"][0]["duration"] == "3:30"
+            assert "api_stream" in result["items"][0]
+            assert "t1" in result["items"][0]["api_stream"]
             assert mock.call_args.kwargs["ParentId"] == "album-id-123"
 
 

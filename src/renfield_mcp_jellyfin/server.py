@@ -97,6 +97,10 @@ def _format_item(raw: dict, fields: list[str]) -> dict:
         "path": lambda r: r.get("Path"),
         "container": lambda r: (r.get("MediaSources") or [{}])[0].get("Container"),
         "stream_url": lambda r: (r.get("MediaSources") or [{}])[0].get("Path"),
+        "api_stream": lambda r: (
+            f"{JELLYFIN_URL}/Audio/{r['Id']}/universal?api_key={JELLYFIN_API_KEY}"
+            if r.get("Id") else None
+        ),
     }
     result = {}
     for f in fields:
@@ -140,7 +144,7 @@ async def search_media(
         Fields="Genres,Artists,AlbumArtist,Album,ProductionYear,RunTimeTicks",
     )
     field_map = {
-        "Audio": ["id", "name", "artist", "album", "year", "duration"],
+        "Audio": ["id", "name", "artist", "album", "year", "duration", "api_stream"],
         "MusicAlbum": ["id", "name", "album_artist", "year", "genre"],
         "MusicArtist": ["id", "name", "genre", "overview"],
         "Movie": ["id", "name", "year", "genre", "overview"],
@@ -232,7 +236,7 @@ async def get_album_tracks(album_id: str) -> dict:
         Fields="Artists,Album,RunTimeTicks",
     )
     items = [
-        _format_item(it, ["id", "name", "index", "artist", "duration"])
+        _format_item(it, ["id", "name", "index", "artist", "duration", "api_stream"])
         for it in data.get("Items", [])
     ]
     return {"total": data.get("TotalRecordCount", 0), "items": items}
@@ -450,13 +454,10 @@ async def get_stream_url(item_id: str) -> dict:
         return err
 
     data = await _jellyfin_get(
-        f"/Items/{item_id}",
+        f"/Users/{JELLYFIN_USER_ID}/Items/{item_id}",
         Fields="MediaSources,Path",
     )
-    result = _format_item(data, ["id", "name", "stream_url", "container"])
-    # Also provide the direct API stream URL
-    result["api_stream"] = f"{JELLYFIN_URL}/Audio/{item_id}/universal?api_key={JELLYFIN_API_KEY}"
-    return result
+    return _format_item(data, ["id", "name", "stream_url", "container", "api_stream"])
 
 
 @mcp.tool()
