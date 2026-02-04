@@ -98,7 +98,7 @@ def _format_item(raw: dict, fields: list[str]) -> dict:
         "container": lambda r: (r.get("MediaSources") or [{}])[0].get("Container"),
         "stream_url": lambda r: (r.get("MediaSources") or [{}])[0].get("Path"),
         "api_stream": lambda r: (
-            f"{JELLYFIN_URL}/Audio/{r['Id']}/universal?api_key={JELLYFIN_API_KEY}"
+            f"{JELLYFIN_URL}/Audio/{r['Id']}/stream?static=true&api_key={JELLYFIN_API_KEY}"
             if r.get("Id") else None
         ),
     }
