@@ -101,6 +101,10 @@ def _format_item(raw: dict, fields: list[str]) -> dict:
             f"{JELLYFIN_URL}/Audio/{r['Id']}/stream?static=true&api_key={JELLYFIN_API_KEY}"
             if r.get("Id") else None
         ),
+        "image_url": lambda r: (
+            f"{JELLYFIN_URL}/Items/{r['Id']}/Images/Primary?api_key={JELLYFIN_API_KEY}"
+            if r.get("Id") else None
+        ),
     }
     result = {}
     for f in fields:
@@ -144,8 +148,8 @@ async def search_media(
         Fields="Genres,Artists,AlbumArtist,Album,ProductionYear,RunTimeTicks",
     )
     field_map = {
-        "Audio": ["id", "name", "artist", "album", "year", "duration", "api_stream"],
-        "MusicAlbum": ["id", "name", "album_artist", "year", "genre"],
+        "Audio": ["id", "name", "artist", "album", "year", "duration", "api_stream", "image_url"],
+        "MusicAlbum": ["id", "name", "album_artist", "year", "genre", "image_url"],
         "MusicArtist": ["id", "name", "genre", "overview"],
         "Movie": ["id", "name", "year", "genre", "overview"],
         "Series": ["id", "name", "year", "genre", "overview"],
@@ -236,7 +240,7 @@ async def get_album_tracks(album_id: str) -> dict:
         Fields="Artists,Album,RunTimeTicks",
     )
     items = [
-        _format_item(it, ["id", "name", "index", "artist", "duration", "api_stream"])
+        _format_item(it, ["id", "name", "index", "artist", "duration", "api_stream", "image_url"])
         for it in data.get("Items", [])
     ]
     return {"total": data.get("TotalRecordCount", 0), "items": items}
