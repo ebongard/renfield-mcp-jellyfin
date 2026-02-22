@@ -154,6 +154,34 @@ class TestSearchMedia:
             call_kwargs = mock.call_args
             assert call_kwargs.kwargs["Limit"] == 50
 
+    async def test_genre_filter(self):
+        with _patch_get({
+            "TotalRecordCount": 275,
+            "Items": [
+                {"Id": "a1", "Name": "Pop Album", "AlbumArtist": "Pop Artist", "ProductionYear": 2023, "Genres": ["Pop"]},
+            ],
+        }) as mock:
+            result = await jf.search_media(genre="Pop", type="MusicAlbum")
+            assert result["total"] == 275
+            assert mock.call_args.kwargs["Genres"] == "Pop"
+            assert "searchTerm" not in mock.call_args.kwargs
+
+    async def test_genre_and_query_combined(self):
+        with _patch_get({
+            "TotalRecordCount": 1,
+            "Items": [
+                {"Id": "a1", "Name": "Afterburner", "AlbumArtist": "ZZ Top", "ProductionYear": 1985, "Genres": ["Rock"]},
+            ],
+        }) as mock:
+            result = await jf.search_media(query="Afterburner", genre="Rock", type="MusicAlbum")
+            assert result["total"] == 1
+            assert mock.call_args.kwargs["searchTerm"] == "Afterburner"
+            assert mock.call_args.kwargs["Genres"] == "Rock"
+
+    async def test_no_query_no_genre_returns_error(self):
+        result = await jf.search_media()
+        assert "error" in result
+
     async def test_missing_config(self, monkeypatch):
         monkeypatch.setattr(jf, "JELLYFIN_URL", "")
         result = await jf.search_media("test")

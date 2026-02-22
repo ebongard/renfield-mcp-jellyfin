@@ -124,28 +124,40 @@ mcp = FastMCP("renfield-jellyfin")
 
 @mcp.tool()
 async def search_media(
-    query: str,
+    query: str = "",
     type: str = "Audio",
     limit: int = 20,
+    genre: str = "",
 ) -> dict:
     """Search the Jellyfin media library.
 
     Args:
-        query: Search term (title, artist, album name)
+        query: Search term (title, artist, album name). Optional if genre is set.
         type: Item type — Audio, MusicAlbum, MusicArtist, Movie, or Series
         limit: Max results (1-50, default 20)
+        genre: Filter by genre name (e.g. "Pop", "Rock"). Can be combined with query.
     """
     if err := _check_config():
         return err
 
+    if not query and not genre:
+        return {"error": "Either query or genre (or both) must be provided."}
+
     limit = max(1, min(limit, 50))
+    params: dict[str, str | int] = {
+        "IncludeItemTypes": type,
+        "Recursive": "true",
+        "Limit": limit,
+        "Fields": "Genres,Artists,AlbumArtist,Album,ProductionYear,RunTimeTicks",
+    }
+    if query:
+        params["searchTerm"] = query
+    if genre:
+        params["Genres"] = genre
+
     data = await _jellyfin_get(
         f"/Users/{JELLYFIN_USER_ID}/Items",
-        searchTerm=query,
-        IncludeItemTypes=type,
-        Recursive="true",
-        Limit=limit,
-        Fields="Genres,Artists,AlbumArtist,Album,ProductionYear,RunTimeTicks",
+        **params,
     )
     field_map = {
         "Audio": ["id", "name", "artist", "album", "year", "duration", "api_stream", "image_url"],
