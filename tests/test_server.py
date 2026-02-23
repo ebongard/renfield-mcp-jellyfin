@@ -386,6 +386,117 @@ class TestListSeries:
 
 
 # ---------------------------------------------------------------------------
+# Tool tests — Video stream & Series (3)
+# ---------------------------------------------------------------------------
+
+class TestVideoStreamExtractor:
+    def test_video_stream_url(self):
+        raw = {"Id": "movie123"}
+        result = jf._format_item(raw, ["id", "video_stream"])
+        assert result["video_stream"].startswith("http://jellyfin.local:8096/Videos/movie123/stream")
+        assert "static=true" in result["video_stream"]
+        assert "/Videos/" in result["video_stream"]
+
+    def test_video_stream_none_without_id(self):
+        raw = {}
+        result = jf._format_item(raw, ["video_stream"])
+        assert "video_stream" not in result
+
+
+class TestSearchMediaMovieFields:
+    async def test_movie_results_contain_video_stream(self):
+        with _patch_get({
+            "TotalRecordCount": 1,
+            "Items": [
+                {"Id": "m1", "Name": "Interstellar", "ProductionYear": 2014, "Genres": ["Sci-Fi"], "Overview": "Space", "RunTimeTicks": 100_200_000_000},
+            ],
+        }):
+            result = await jf.search_media("Interstellar", type="Movie")
+            assert "video_stream" in result["items"][0]
+            assert "/Videos/" in result["items"][0]["video_stream"]
+            assert "duration" in result["items"][0]
+
+
+class TestGetSeriesSeasons:
+    async def test_returns_seasons(self):
+        with _patch_get({
+            "Items": [
+                {"Id": "s1", "Name": "Season 1", "IndexNumber": 1, "ChildCount": 10},
+                {"Id": "s2", "Name": "Season 2", "IndexNumber": 2, "ChildCount": 13},
+            ],
+        }) as mock:
+            result = await jf.get_series_seasons("series-abc")
+            assert result["total"] == 2
+            assert result["items"][0]["index"] == 1
+            assert result["items"][0]["child_count"] == 10
+            # Verify API path
+            assert "/Shows/series-abc/Seasons" in mock.call_args.args[0]
+
+    async def test_missing_config(self, monkeypatch):
+        monkeypatch.setattr(jf, "JELLYFIN_URL", "")
+        result = await jf.get_series_seasons("series-abc")
+        assert "error" in result
+
+
+class TestGetSeasonEpisodes:
+    async def test_returns_episodes(self):
+        with _patch_get({
+            "Items": [
+                {"Id": "e1", "Name": "Pilot", "IndexNumber": 1, "RunTimeTicks": 36_000_000_000, "Overview": "The beginning"},
+                {"Id": "e2", "Name": "Cat's in the Bag", "IndexNumber": 2, "RunTimeTicks": 28_000_000_000},
+            ],
+        }) as mock:
+            result = await jf.get_season_episodes("series-abc", "season-1")
+            assert result["total"] == 2
+            assert result["items"][0]["name"] == "Pilot"
+            assert result["items"][0]["index"] == 1
+            assert "video_stream" in result["items"][0]
+            assert "/Videos/" in result["items"][0]["video_stream"]
+            assert "duration" in result["items"][0]
+            # Verify API call parameters
+            assert mock.call_args.kwargs["SeasonId"] == "season-1"
+
+    async def test_missing_config(self, monkeypatch):
+        monkeypatch.setattr(jf, "JELLYFIN_URL", "")
+        result = await jf.get_season_episodes("series-abc", "season-1")
+        assert "error" in result
+
+
+class TestGetNextUp:
+    async def test_returns_next_episodes(self):
+        with _patch_get({
+            "Items": [
+                {"Id": "e5", "Name": "Ozymandias", "IndexNumber": 14, "RunTimeTicks": 28_000_000_000, "Overview": "Everyone copes"},
+            ],
+        }) as mock:
+            result = await jf.get_next_up()
+            assert result["total"] == 1
+            assert result["items"][0]["name"] == "Ozymandias"
+            assert "video_stream" in result["items"][0]
+            assert "/Shows/NextUp" in mock.call_args.args[0]
+
+    async def test_with_series_filter(self):
+        with _patch_get({"Items": []}) as mock:
+            await jf.get_next_up(series_id="series-abc")
+            assert mock.call_args.kwargs["SeriesId"] == "series-abc"
+
+    async def test_without_series_id(self):
+        with _patch_get({"Items": []}) as mock:
+            await jf.get_next_up()
+            assert "SeriesId" not in mock.call_args.kwargs
+
+    async def test_limit_clamped(self):
+        with _patch_get({"Items": []}) as mock:
+            await jf.get_next_up(limit=100)
+            assert mock.call_args.kwargs["Limit"] == 50
+
+    async def test_missing_config(self, monkeypatch):
+        monkeypatch.setattr(jf, "JELLYFIN_URL", "")
+        result = await jf.get_next_up()
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
 # Tool tests — Utility (2)
 # ---------------------------------------------------------------------------
 
@@ -394,6 +505,7 @@ class TestGetStreamUrl:
         with _patch_get({
             "Id": "item1",
             "Name": "Song X",
+            "Type": "Audio",
             "MediaSources": [{"Path": "/data/music/song.flac", "Container": "flac"}],
         }):
             result = await jf.get_stream_url("item1")
@@ -402,6 +514,8 @@ class TestGetStreamUrl:
             assert result["container"] == "flac"
             assert "api_stream" in result
             assert "item1" in result["api_stream"]
+            assert result["type"] == "Audio"
+            assert "video_stream" in result
 
 
 class TestLibraryStats:

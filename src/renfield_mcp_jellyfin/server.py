@@ -101,6 +101,10 @@ def _format_item(raw: dict, fields: list[str]) -> dict:
             f"{JELLYFIN_URL}/Audio/{r['Id']}/stream?static=true&api_key={JELLYFIN_API_KEY}"
             if r.get("Id") else None
         ),
+        "video_stream": lambda r: (
+            f"{JELLYFIN_URL}/Videos/{r['Id']}/stream?static=true&api_key={JELLYFIN_API_KEY}"
+            if r.get("Id") else None
+        ),
         "image_url": lambda r: (
             f"{JELLYFIN_URL}/Items/{r['Id']}/Images/Primary?api_key={JELLYFIN_API_KEY}"
             if r.get("Id") else None
@@ -163,7 +167,7 @@ async def search_media(
         "Audio": ["id", "name", "artist", "album", "year", "duration", "api_stream", "image_url"],
         "MusicAlbum": ["id", "name", "album_artist", "year", "genre", "image_url"],
         "MusicArtist": ["id", "name", "genre", "overview"],
-        "Movie": ["id", "name", "year", "genre", "overview"],
+        "Movie": ["id", "name", "year", "genre", "overview", "duration", "video_stream", "image_url"],
         "Series": ["id", "name", "year", "genre", "overview"],
     }
     fields = field_map.get(type, ["id", "name", "type", "year"])
@@ -381,7 +385,7 @@ async def get_playlists(limit: int = 30) -> dict:
     return {"total": data.get("TotalRecordCount", 0), "items": items}
 
 
-# ── Media tools (2) ──────────────────────────────────────────────────────────
+# ── Media tools (2) + Series tools (3) ───────────────────────────────────────
 
 
 @mcp.tool()
@@ -407,14 +411,14 @@ async def list_movies(
         "Limit": limit,
         "SortBy": SORT_MAP.get(sort, "DateCreated"),
         "SortOrder": "Descending" if sort in ("added", "year", "rating") else "Ascending",
-        "Fields": "Genres,ProductionYear,Overview,CommunityRating",
+        "Fields": "Genres,ProductionYear,Overview,CommunityRating,RunTimeTicks",
     }
     if genre:
         params["Genres"] = genre
 
     data = await _jellyfin_get(f"/Users/{JELLYFIN_USER_ID}/Items", **params)
     items = [
-        _format_item(it, ["id", "name", "year", "genre", "overview"])
+        _format_item(it, ["id", "name", "year", "genre", "overview", "duration", "video_stream", "image_url"])
         for it in data.get("Items", [])
     ]
     return {"total": data.get("TotalRecordCount", 0), "items": items}
@@ -456,6 +460,87 @@ async def list_series(
     return {"total": data.get("TotalRecordCount", 0), "items": items}
 
 
+# ── Series tools (3) ────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_series_seasons(series_id: str) -> dict:
+    """Get all seasons of a TV series.
+
+    Args:
+        series_id: Jellyfin series ID
+    """
+    if err := _check_config():
+        return err
+
+    data = await _jellyfin_get(
+        f"/Shows/{series_id}/Seasons",
+        UserId=JELLYFIN_USER_ID,
+        Fields="ChildCount",
+    )
+    items = [
+        _format_item(it, ["id", "name", "index", "child_count"])
+        for it in data.get("Items", [])
+    ]
+    return {"total": len(items), "items": items}
+
+
+@mcp.tool()
+async def get_season_episodes(series_id: str, season_id: str) -> dict:
+    """Get all episodes of a specific season.
+
+    Args:
+        series_id: Jellyfin series ID
+        season_id: Jellyfin season ID
+    """
+    if err := _check_config():
+        return err
+
+    data = await _jellyfin_get(
+        f"/Shows/{series_id}/Episodes",
+        UserId=JELLYFIN_USER_ID,
+        SeasonId=season_id,
+        Fields="Overview,RunTimeTicks,MediaSources",
+        SortBy="IndexNumber",
+    )
+    items = [
+        _format_item(it, ["id", "name", "index", "duration", "overview", "video_stream", "image_url"])
+        for it in data.get("Items", [])
+    ]
+    return {"total": len(items), "items": items}
+
+
+@mcp.tool()
+async def get_next_up(series_id: str = "", limit: int = 10) -> dict:
+    """Get next unwatched episodes (continue watching).
+
+    Uses Jellyfin's built-in "Next Up" logic to find the next episode
+    the user should watch for each series.
+
+    Args:
+        series_id: Optional series ID to filter (empty = all series)
+        limit: Max results (1-50, default 10)
+    """
+    if err := _check_config():
+        return err
+
+    limit = max(1, min(limit, 50))
+    params: dict[str, str | int] = {
+        "UserId": JELLYFIN_USER_ID,
+        "Limit": limit,
+        "Fields": "Overview,RunTimeTicks,MediaSources",
+    }
+    if series_id:
+        params["SeriesId"] = series_id
+
+    data = await _jellyfin_get("/Shows/NextUp", **params)
+    items = [
+        _format_item(it, ["id", "name", "index", "duration", "overview", "video_stream", "image_url"])
+        for it in data.get("Items", [])
+    ]
+    return {"total": len(items), "items": items}
+
+
 # ── Utility tools (2) ────────────────────────────────────────────────────────
 
 
@@ -471,9 +556,9 @@ async def get_stream_url(item_id: str) -> dict:
 
     data = await _jellyfin_get(
         f"/Users/{JELLYFIN_USER_ID}/Items/{item_id}",
-        Fields="MediaSources,Path",
+        Fields="MediaSources,Path,Type",
     )
-    return _format_item(data, ["id", "name", "stream_url", "container", "api_stream"])
+    return _format_item(data, ["id", "name", "type", "stream_url", "container", "api_stream", "video_stream"])
 
 
 @mcp.tool()
